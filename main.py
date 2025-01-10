@@ -6,6 +6,7 @@ import json
 import platform
 import os
 import colorama
+import shutil
 from datetime import datetime
 from queue import Queue
 from typing import Optional
@@ -92,24 +93,21 @@ class Captcha:
                 task_id = response_data.get('task_id')
                 Log.amazing(f"Captcha task created successfully. Task ID: {task_id}")
 
-                # Polling RazorCap until the captcha is solved
-                while True:
-                    Log.info(f"Waiting for captcha solution for task ID: {task_id}...")
-                    # Check the status of the captcha solving task
-                    status_response = requests.get(f"https://api.razorcap.xyz/get_task?task_id={task_id}")
-                    status_data = status_response.json()
+                # Wait 10 seconds before checking the captcha solving result
+                Log.info(f"Waiting 10 seconds for captcha solution...")
+                time.sleep(10)
 
-                    if status_data.get('status') == 'solved':
-                        captcha_solution = status_data.get('solution')
-                        Log.amazing(f"Captcha solved: {captcha_solution[:10]}...")
-                        return captcha_solution
-                    elif status_data.get('status') == 'failed':
-                        Log.bad(f"Captcha solving failed: {status_data}")
-                        return None
-                    
-                    # Wait a bit before checking the status again (2-5 seconds)
-                    time.sleep(random.randint(2, 5))
+                # Now check the status of the captcha solving task
+                status_response = requests.get(f"https://api.razorcap.xyz/get_task?task_id={task_id}")
+                status_data = status_response.json()
 
+                if status_data.get('status') == 'solved':
+                    captcha_solution = status_data.get('solution')
+                    Log.amazing(f"Captcha solved: {captcha_solution[:10]}...")
+                    return captcha_solution
+                elif status_data.get('status') == 'failed':
+                    Log.bad(f"Captcha solving failed: {status_data}")
+                    return None
             else:
                 Log.bad(f"Captcha solving task creation failed: {response_data}")
                 return None
