@@ -6,10 +6,10 @@ import json
 import platform
 import os
 import colorama
-import shutil
 from datetime import datetime
 from queue import Queue
 from typing import Optional
+import base64
 
 
 # Utility Functions
@@ -89,10 +89,29 @@ class Captcha:
             response_data = response.json()
 
             if response_data.get('status') == 'success':
-                Log.amazing(f"Captcha solved: {response_data.get('solution')[:10]}...")
-                return response_data.get('solution')
+                task_id = response_data.get('task_id')
+                Log.amazing(f"Captcha task created successfully. Task ID: {task_id}")
+
+                # Polling RazorCap until the captcha is solved
+                while True:
+                    Log.info(f"Waiting for captcha solution for task ID: {task_id}...")
+                    # Check the status of the captcha solving task
+                    status_response = requests.get(f"https://api.razorcap.xyz/get_task?task_id={task_id}")
+                    status_data = status_response.json()
+
+                    if status_data.get('status') == 'solved':
+                        captcha_solution = status_data.get('solution')
+                        Log.amazing(f"Captcha solved: {captcha_solution[:10]}...")
+                        return captcha_solution
+                    elif status_data.get('status') == 'failed':
+                        Log.bad(f"Captcha solving failed: {status_data}")
+                        return None
+                    
+                    # Wait a bit before checking the status again (2-5 seconds)
+                    time.sleep(random.randint(2, 5))
+
             else:
-                Log.bad(f"Captcha solving failed: {response_data}")
+                Log.bad(f"Captcha solving task creation failed: {response_data}")
                 return None
         except Exception as e:
             Log.bad(f"Error solving captcha with RazorCap: {e}")
@@ -171,10 +190,6 @@ class Discord:
                     proxy=proxy
                 )
 
-                # Add 7-second wait before checking captcha results
-                Log.info("Waiting for captcha solution...")
-                time.sleep(7)  # Wait for 7 seconds
-
                 if captcha_solution:
                     Log.amazing(f"Captcha solved: {captcha_solution[:10]}...")
                     account_data = {
@@ -207,8 +222,11 @@ class Discord:
                         Log.warn(f"Failed to create account. Retrying... {retries}")
                         time.sleep(3)  # Add a delay between retries
 
-            if not self.token:
-                Log.bad(f"Failed to create account after infinite retries.")
+            # If captcha solution failed, retry the process
+            else:
+                Log.bad(f"Failed to get valid captcha solution. Retrying...")
+                time.sleep(3)  # Retry after a short delay
+
         except Exception as e:
             Log.bad(f"Error in Discord.create_account: {e}")
 
