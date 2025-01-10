@@ -6,6 +6,7 @@ import json
 import platform
 import os
 import colorama
+import shutil
 from datetime import datetime
 from queue import Queue
 from typing import Optional
@@ -159,10 +160,9 @@ class Discord:
         try:
             Log.info("Creating account...")
             captcha_solution = None
-            max_retries = 3
             retries = 0
 
-            while retries < max_retries:
+            while True:  # Infinite retry loop
                 proxy = self.proxy_queue.get()
                 captcha_solution = Captcha.solve(
                     api_key=self.config['captcha_api_key'],
@@ -200,17 +200,18 @@ class Discord:
                     if response.status_code == 201:  # Success
                         self.token = response.json().get('token')
                         Log.amazing(f"Account created successfully with token: {self.token[:10]}...")
-                        break
+                        break  # Break out of the loop if account creation is successful
                     else:
                         retries += 1
                         self.proxy_queue.put(proxy)  # Re-add proxy to the queue for the next try
-                        Log.warn(f"Failed to create account. Retrying... {retries}/{max_retries}")
+                        Log.warn(f"Failed to create account. Retrying... {retries}")
                         time.sleep(3)  # Add a delay between retries
 
             if not self.token:
-                Log.bad(f"Failed to create account after {max_retries} attempts.")
+                Log.bad(f"Failed to create account after infinite retries.")
         except Exception as e:
             Log.bad(f"Error in Discord.create_account: {e}")
+
 
 # Main Execution
 if __name__ == "__main__":
