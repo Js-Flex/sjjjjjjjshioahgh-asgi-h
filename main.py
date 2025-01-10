@@ -97,7 +97,7 @@ class Captcha:
                 Log.info(f"Waiting 10 seconds for captcha solution...")
                 time.sleep(10)
 
-                # Now check the status of the captcha solving task
+                # After 10 seconds, now check the status of the captcha solving task
                 status_response = requests.get(f"https://api.razorcap.xyz/get_task?task_id={task_id}")
                 status_data = status_response.json()
 
@@ -220,11 +220,9 @@ class Discord:
                         Log.warn(f"Failed to create account. Retrying... {retries}")
                         time.sleep(3)  # Add a delay between retries
 
-            # If captcha solution failed, retry the process
-            else:
-                Log.bad(f"Failed to get valid captcha solution. Retrying...")
-                time.sleep(3)  # Retry after a short delay
-
+            # If captcha solution failed, print failure message
+            if not self.token:
+                Log.bad(f"Failed to create account after multiple attempts.")
         except Exception as e:
             Log.bad(f"Error in Discord.create_account: {e}")
 
