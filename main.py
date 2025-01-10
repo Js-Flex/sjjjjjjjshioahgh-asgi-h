@@ -1,21 +1,14 @@
-import tls_client
+import requests
 import random
 import string
 import time
-import re
-import threading
 import json
-import colorama
-import ctypes
 import platform
-import sys
 import os
-import shutil
+import colorama
 from datetime import datetime
-from websocket import WebSocket
+from queue import Queue
 from typing import Optional
-import requests
-import base64
 
 
 # Utility Functions
@@ -24,20 +17,6 @@ class Utils:
     def random_username(length: int = 8) -> str:
         """Generate a random username with letters only."""
         return ''.join(random.choices(string.ascii_letters, k=length))
-
-    @staticmethod
-    def fetch_buildnum() -> int:
-        try:
-            asset_files = re.findall(r'<script\s+src="([^"]+\.js)"\s+defer>\s*</script>', requests.get("https://discord.com/login").text)
-            for js_endpoint in asset_files:
-                resp = requests.get(f"https://discord.com/{js_endpoint}")
-                try:
-                    return int(resp.text.split('"buildNumber",(_="')[1].split('"')[0])
-                except (IndexError, ValueError):
-                    continue
-        except Exception as e:
-            Log.warn(f"Failed to fetch build number: {e}")
-        return 295805
 
     @staticmethod
     def build_x_context_properties(location: str) -> str:
@@ -55,31 +34,6 @@ class Utils:
         except Exception as e:
             Log.warn(f"Error generating nonce: {e}")
             return "0"
-
-    @staticmethod
-    def build_xsup(user_agent: str, ua_version: str, build_num: int) -> str:
-        try:
-            data = {
-                "os": "Windows",
-                "browser": "Chrome",
-                "device": "",
-                "system_locale": "en-US",
-                "browser_user_agent": user_agent,
-                "browser_version": f"{ua_version}.0.0.0",
-                "os_version": "10",
-                "referrer": "",
-                "referring_domain": "",
-                "referrer_current": "https://discord.com/",
-                "referring_domain_current": "discord.com",
-                "release_channel": "stable",
-                "client_build_number": build_num,
-                "client_event_source": None,
-                "design_id": 0
-            }
-            return base64.b64encode(json.dumps(data, separators=(",", ":")).encode()).decode()
-        except Exception as e:
-            Log.warn(f"Error building x-super-properties: {e}")
-            return ""
 
 
 # Logging Utility
@@ -110,6 +64,38 @@ class Log:
     def _log(msg: str, symbol: str, color: str):
         print(f"[{colorama.Fore.LIGHTBLACK_EX}{datetime.now().strftime('%H:%M:%S')}{colorama.Fore.RESET}] "
               f"({color}{symbol}{colorama.Fore.RESET}) - {msg}")
+
+
+# RazorCap Captcha Solver
+class Captcha:
+    @staticmethod
+    def solve(api_key: str, sitekey: str, siteurl: str, proxy: str, rqdata: Optional[str] = None) -> Optional[str]:
+        try:
+            payload = {
+                'key': api_key,
+                'type': 'hcaptcha_basic',
+                'data': {
+                    'sitekey': sitekey,
+                    'siteurl': siteurl,
+                    'proxy': proxy
+                }
+            }
+            if rqdata:
+                payload['data']['rqdata'] = rqdata
+
+            Log.info(f"Sending captcha solving request to RazorCap...")
+            response = requests.post("https://api.razorcap.xyz/create_task", json=payload)
+            response_data = response.json()
+
+            if response_data.get('status') == 'success':
+                Log.amazing(f"Captcha solved: {response_data.get('solution')[:10]}...")
+                return response_data.get('solution')
+            else:
+                Log.bad(f"Captcha solving failed: {response_data}")
+                return None
+        except Exception as e:
+            Log.bad(f"Error solving captcha with RazorCap: {e}")
+            return None
 
 
 # UI Utility
@@ -145,49 +131,20 @@ class UI:
         return input(f"\n{colorama.Fore.BLUE}[>] Enter your RazorCap API Key: {colorama.Fore.RESET}")
 
 
-# RazorCap Captcha Solver
-class Captcha:
-    @staticmethod
-    def solve(api_key: str, sitekey: str, siteurl: str, proxy: str, rqdata: Optional[str] = None) -> Optional[str]:
-        try:
-            payload = {
-                'key': api_key,
-                'type': 'hcaptcha_basic',
-                'data': {
-                    'sitekey': sitekey,
-                    'siteurl': siteurl,
-                    'proxy': proxy
-                }
-            }
-            if rqdata:
-                payload['data']['rqdata'] = rqdata
-
-            Log.info(f"Sending captcha solving request to RazorCap...")
-            response = requests.post("https://api.razorcap.xyz/create_task", json=payload)
-            response_data = response.json()
-
-            if response_data.get('status') == 'success':
-                return response_data.get('solution')
-            else:
-                Log.bad(f"Captcha solving failed: {response_data}")
-                return None
-        except Exception as e:
-            Log.bad(f"Error solving captcha with RazorCap: {e}")
-            return None
-
-
-# Main Discord Class
+# Discord Account Creation
 class Discord:
     def __init__(self, config, proxies):
         try:
             self.config = config
             self.proxies = proxies
-            self.proxy = random.choice(proxies)
+            self.proxy_queue = Queue()
+            for proxy in proxies:
+                self.proxy_queue.put(proxy)
             self.username = Utils.random_username(random.randint(6, 12))
             self.email = f"{self.username}@gmail.com"
             self.password = config.get('password', 'default_password')
             self.token = None
-            Log.good(f"Initialized Discord object with proxy: {self.proxy}, username: {self.username}")
+            Log.good(f"Initialized Discord object with proxy: {self.proxy_queue.queue[0]}, username: {self.username}")
         except Exception as e:
             Log.bad(f"Error during initialization: {e}")
 
@@ -201,46 +158,52 @@ class Discord:
     def create_account(self):
         try:
             Log.info("Creating account...")
-            captcha_solution = Captcha.solve(
-                api_key=self.config['captcha_api_key'],
-                sitekey="4c672d35-0701-42b2-88c3-78380b0db560",
-                siteurl="https://discord.com",
-                proxy=self.proxy
-            )
-            if captcha_solution:
-                Log.amazing(f"Captcha solved: {captcha_solution[:10]}...")
-                # Construct the payload to send for account creation
-                payload = {
-                    "email": self.email,
-                    "username": self.username,
-                    "password": self.password,
-                    "captcha_key": captcha_solution,  # The solved captcha key
-                    "invite": None,  # If you have a specific invite code, include it here
-                    "consent": True,  # Consent checkbox
-                    "date_of_birth": "2000-01-01",  # Provide a valid birthdate in the proper format
-                }
+            captcha_solution = None
+            max_retries = 3
+            retries = 0
 
-                # Send request to Discord's account creation endpoint
-                headers = {
-                    "Content-Type": "application/json",
-                    "User-Agent": self.config.get('user_agent', 'Mozilla/5.0'),
-                    "X-Super-Properties": Utils.build_xsup(self.config.get('user_agent', 'Mozilla/5.0'), '99', 295805)
-                }
+            while retries < max_retries:
+                proxy = self.proxy_queue.get()
+                captcha_solution = Captcha.solve(
+                    api_key=self.config['captcha_api_key'],
+                    sitekey="4c672d35-0701-42b2-88c3-78380b0db560",  # Discord's sitekey
+                    siteurl="https://discord.com",
+                    proxy=proxy
+                )
+                if captcha_solution:
+                    Log.amazing(f"Captcha solved: {captcha_solution[:10]}...")
+                    account_data = {
+                        "email": self.email,
+                        "username": self.username,
+                        "password": self.password,
+                        "captcha_key": captcha_solution,  # The captcha solution from RazorCap
+                        "invite": None,
+                        "gift_code_sku_id": None,
+                        "date_of_birth": "2000-01-01",  # Make sure to set a valid birthdate
+                        "consent": True,
+                        "platform": "web"
+                    }
 
-                create_account_url = "https://discord.com/api/v9/auth/register"
-                response = requests.post(create_account_url, json=payload, headers=headers, proxies={"http": self.proxy, "https": self.proxy})
+                    # Register account
+                    registration_url = "https://discord.com/api/v9/auth/register"
+                    headers = {
+                        "Content-Type": "application/json",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                    }
+                    response = requests.post(registration_url, json=account_data, headers=headers, proxies={"http": proxy, "https": proxy})
 
-                if response.status_code == 201:
-                    # Successfully created the account, extract token from the response
-                    self.token = response.json().get("token")
-                    if self.token:
+                    if response.status_code == 201:  # Success
+                        self.token = response.json().get('token')
                         Log.amazing(f"Account created successfully with token: {self.token[:10]}...")
+                        break
                     else:
-                        Log.bad("Account created, but no token received.")
-                else:
-                    Log.bad(f"Account creation failed: {response.status_code} - {response.text}")
-            else:
-                Log.warn("Failed to solve captcha. Retrying...")
+                        retries += 1
+                        self.proxy_queue.put(proxy)  # Re-add proxy to the queue for the next try
+                        Log.warn(f"Failed to create account. Retrying... {retries}/{max_retries}")
+                        time.sleep(3)  # Add a delay between retries
+
+            if not self.token:
+                Log.bad(f"Failed to create account after {max_retries} attempts.")
         except Exception as e:
             Log.bad(f"Error in Discord.create_account: {e}")
 
