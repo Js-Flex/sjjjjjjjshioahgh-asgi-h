@@ -13,13 +13,18 @@ import os
 import shutil
 from datetime import datetime
 from websocket import WebSocket
-from typing import Optional, Union
+from typing import Optional
 import requests
 import base64
 
 
 # Utility Functions
 class Utils:
+    @staticmethod
+    def random_username(length: int = 8) -> str:
+        """Generate a random username with letters only."""
+        return ''.join(random.choices(string.ascii_letters, k=length))
+
     @staticmethod
     def fetch_buildnum() -> int:
         try:
@@ -135,11 +140,9 @@ class UI:
         for line in logo_text.splitlines():
             print(random.choice(colors) + line.center(console_width))
 
-        choice = input(f"\n[{colorama.Fore.BLUE}1{colorama.Fore.RESET}] - Start\n"
-                       f"[{colorama.Fore.RED}2{colorama.Fore.RESET}] - Exit\n"
-                       f"{colorama.Fore.BLUE}|> {colorama.Fore.WHITE}")
-        if choice != "1":
-            os._exit(0)
+    @staticmethod
+    def get_api_key() -> str:
+        return input(f"\n{colorama.Fore.BLUE}[>] Enter your RazorCap API Key: {colorama.Fore.RESET}")
 
 
 # RazorCap Captcha Solver
@@ -175,14 +178,12 @@ class Captcha:
 
 # Main Discord Class
 class Discord:
-    def __init__(self, config, proxies, usernames, bios):
+    def __init__(self, config, proxies):
         try:
             self.config = config
             self.proxies = proxies
-            self.usernames = usernames
-            self.bios = bios
             self.proxy = random.choice(proxies)
-            self.username = random.choice(usernames)
+            self.username = Utils.random_username(random.randint(6, 12))
             self.email = f"{self.username}@gmail.com"
             self.password = config.get('password', 'default_password')
             self.token = None
@@ -208,8 +209,36 @@ class Discord:
             )
             if captcha_solution:
                 Log.amazing(f"Captcha solved: {captcha_solution[:10]}...")
-                self.token = "dummy_token"  # Replace with actual API call
-                Log.amazing(f"Account created successfully with token: {self.token[:10]}...")
+                # Construct the payload to send for account creation
+                payload = {
+                    "email": self.email,
+                    "username": self.username,
+                    "password": self.password,
+                    "captcha_key": captcha_solution,  # The solved captcha key
+                    "invite": None,  # If you have a specific invite code, include it here
+                    "consent": True,  # Consent checkbox
+                    "date_of_birth": "2000-01-01",  # Provide a valid birthdate in the proper format
+                }
+
+                # Send request to Discord's account creation endpoint
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": self.config.get('user_agent', 'Mozilla/5.0'),
+                    "X-Super-Properties": Utils.build_xsup(self.config.get('user_agent', 'Mozilla/5.0'), '99', 295805)
+                }
+
+                create_account_url = "https://discord.com/api/v9/auth/register"
+                response = requests.post(create_account_url, json=payload, headers=headers, proxies={"http": self.proxy, "https": self.proxy})
+
+                if response.status_code == 201:
+                    # Successfully created the account, extract token from the response
+                    self.token = response.json().get("token")
+                    if self.token:
+                        Log.amazing(f"Account created successfully with token: {self.token[:10]}...")
+                    else:
+                        Log.bad("Account created, but no token received.")
+                else:
+                    Log.bad(f"Account creation failed: {response.status_code} - {response.text}")
             else:
                 Log.warn("Failed to solve captcha. Retrying...")
         except Exception as e:
@@ -220,16 +249,14 @@ class Discord:
 if __name__ == "__main__":
     try:
         UI.show()
+        api_key = UI.get_api_key()
         config = {
-            "license": "dummy_license",
-            "password": "dummy_password",
-            "captcha_api_key": "9836c167-2f5904a9f0b256-6f21d82b5b76"
+            "captcha_api_key": api_key,
+            "password": "dummy_password12345tg",
         }
-        proxies = ["http://prismboosts:SantaProxy_Streaming-1@geo.iproyal,com:12321"]
-        usernames = ["Uyfutvhbkjlfa","Uiuu9ohwkraf","bhdjkafn", "fyguiubo"]
-        bios = ["moo", "yappatron"]
+        proxies = ["http://prismboosts:SantaProxy_Streaming-1@geo.iproyal.com:12321"]
 
-        discord = Discord(config, proxies, usernames, bios)
+        discord = Discord(config, proxies)
         discord.begin()
     except Exception as e:
         Log.bad(f"Unhandled exception in main: {e}")
