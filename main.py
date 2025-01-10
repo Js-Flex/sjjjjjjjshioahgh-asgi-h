@@ -170,6 +170,11 @@ class Discord:
                     siteurl="https://discord.com",
                     proxy=proxy
                 )
+
+                # Add 7-second wait before checking captcha results
+                Log.info("Waiting for captcha solution...")
+                time.sleep(7)  # Wait for 7 seconds
+
                 if captcha_solution:
                     Log.amazing(f"Captcha solved: {captcha_solution[:10]}...")
                     account_data = {
@@ -206,7 +211,6 @@ class Discord:
                 Log.bad(f"Failed to create account after {max_retries} attempts.")
         except Exception as e:
             Log.bad(f"Error in Discord.create_account: {e}")
-
 
 # Main Execution
 if __name__ == "__main__":
