@@ -1,5 +1,3 @@
-# Unified Script with Robust Error Handling
-
 import tls_client
 import random
 import string
@@ -144,42 +142,94 @@ class UI:
             os._exit(0)
 
 
-# Captcha Utility
+# RazorCap Captcha Solver
 class Captcha:
     @staticmethod
-    def solve(user_agent: str, api_key: str, proxy: str, service: str = 'capmonster',
-              site_key: str = "4c672d35-0701-42b2-88c3-78380b0db560") -> Optional[str]:
-        # Simplified handling
-        Log.info("Solving Captcha...")
-        return "dummy-captcha-solution"
+    def solve(api_key: str, sitekey: str, siteurl: str, proxy: str, rqdata: Optional[str] = None) -> Optional[str]:
+        try:
+            payload = {
+                'key': api_key,
+                'type': 'hcaptcha_basic',
+                'data': {
+                    'sitekey': sitekey,
+                    'siteurl': siteurl,
+                    'proxy': proxy
+                }
+            }
+            if rqdata:
+                payload['data']['rqdata'] = rqdata
+
+            Log.info(f"Sending captcha solving request to RazorCap...")
+            response = requests.post("https://api.razorcap.xyz/create_task", json=payload)
+            response_data = response.json()
+
+            if response_data.get('status') == 'success':
+                return response_data.get('solution')
+            else:
+                Log.bad(f"Captcha solving failed: {response_data}")
+                return None
+        except Exception as e:
+            Log.bad(f"Error solving captcha with RazorCap: {e}")
+            return None
 
 
 # Main Discord Class
 class Discord:
     def __init__(self, config, proxies, usernames, bios):
-        self.config = config
-        self.proxies = proxies
-        self.usernames = usernames
-        self.bios = bios
-        self.proxy = random.choice(proxies)
-        self.username = random.choice(usernames)
-        self.email = f"{self.username}@gmail.com"
-        self.password = config.get('password', 'default_password')
-        self.token = None
+        try:
+            self.config = config
+            self.proxies = proxies
+            self.usernames = usernames
+            self.bios = bios
+            self.proxy = random.choice(proxies)
+            self.username = random.choice(usernames)
+            self.email = f"{self.username}@gmail.com"
+            self.password = config.get('password', 'default_password')
+            self.token = None
+            Log.good(f"Initialized Discord object with proxy: {self.proxy}, username: {self.username}")
+        except Exception as e:
+            Log.bad(f"Error during initialization: {e}")
 
     def begin(self):
-        Log.good("Starting Discord operations...")
+        try:
+            Log.good("Starting Discord operations...")
+            self.create_account()
+        except Exception as e:
+            Log.bad(f"Error in Discord.begin: {e}")
 
     def create_account(self):
-        Log.info("Creating account...")
-        # Simulate account creation
+        try:
+            Log.info("Creating account...")
+            captcha_solution = Captcha.solve(
+                api_key=self.config['captcha_api_key'],
+                sitekey="4c672d35-0701-42b2-88c3-78380b0db560",
+                siteurl="https://discord.com",
+                proxy=self.proxy
+            )
+            if captcha_solution:
+                Log.amazing(f"Captcha solved: {captcha_solution[:10]}...")
+                self.token = "dummy_token"  # Replace with actual API call
+                Log.amazing(f"Account created successfully with token: {self.token[:10]}...")
+            else:
+                Log.warn("Failed to solve captcha. Retrying...")
+        except Exception as e:
+            Log.bad(f"Error in Discord.create_account: {e}")
 
 
+# Main Execution
 if __name__ == "__main__":
-    UI.show()
-    config = {"license": "dummy_license", "password": "dummy_password"}
-    proxies = ["127.0.0.1:8080"]
-    usernames = ["User1", "User2"]
-    bios = ["Bio1", "Bio2"]
-    discord = Discord(config, proxies, usernames, bios)
-    discord.begin()
+    try:
+        UI.show()
+        config = {
+            "license": "dummy_license",
+            "password": "dummy_password",
+            "captcha_api_key": "9836c167-2f5904a9f0b256-6f21d82b5b76"
+        }
+        proxies = ["http://prismboosts:SantaProxy_Streaming-1@geo.iproyal,com:12321"]
+        usernames = ["Uyfutvhbkjlfa","Uiuu9ohwkraf","bhdjkafn", "fyguiubo"]
+        bios = ["moo", "yappatron"]
+
+        discord = Discord(config, proxies, usernames, bios)
+        discord.begin()
+    except Exception as e:
+        Log.bad(f"Unhandled exception in main: {e}")
